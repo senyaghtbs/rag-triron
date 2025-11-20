@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Chart.Name }}-load-model
+  namespace: {{ .Values.global.namespace }}
+spec:
+  template:
+    spec:
+      containers:
+      - name: load-model
+        image: busybox
+        command:
+        - "sh"
+        - "-c"
+        args:
+        - |
+          echo "Loading ONNX model to PVC..."
+          mkdir -p /models/embedder/1
+          # Здесь можно добавить загрузку модели из S3/GCS или использовать kubectl cp позже
+          echo "Model loading job completed"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: {{ .Chart.Name }}-triton-models
+      restartPolicy: Never
+  backoffLimit: 1

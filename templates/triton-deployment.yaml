@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}-triton
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Chart.Name }}-triton
+spec:
+  replicas: {{ .Values.triton.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}-triton
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}-triton
+    spec:
+      initContainers:
+      - name: copy-model
+        image: busybox
+        command:
+        - "sh"
+        - "-c"
+        - |
+          echo "Copying model to PVC..."
+          cp -r /model-src/embedder /models/
+          ls -la /models/embedder/1/
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+        - name: model-source
+          mountPath: /model-src
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      containers:
+      - name: triton
+        image: {{ .Values.triton.image.repository }}:{{ .Values.triton.image.tag }}
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 8001
+          name: grpc
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for model to be available..."
+          until [ -f /models/embedder/1/model.onnx ]; do
+            echo "Model not ready yet, waiting..."
+            sleep 5
+          done
+          echo "Starting Triton with ONNX model..."
+          tritonserver --model-repository=/models --allow-http --log-verbose=1
+        resources:
+          {{- toYaml .Values.triton.resources | nindent 12 }}
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: {{ .Chart.Name }}-triton-models
+      - name: model-source
+        configMap:
+          name: rag-system-model-source

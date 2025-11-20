@@ -1,0 +1,15 @@
+model-repository/
+scripts/
+*.onnx
+*.bin
+*.pth
+*.pt
+*.tar.gz
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+*.log
+.env
+.DS_Store
+.onnx  

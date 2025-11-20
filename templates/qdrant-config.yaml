@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}-qdrant-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Chart.Name }}-qdrant
+    app.kubernetes.io/name: {{ .Chart.Name }}-qdrant
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  config.yaml: |
+    log_level: INFO
+    storage:
+      storage_path: "/qdrant/storage"

@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}-rag-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Chart.Name }}-rag-api
+spec:
+  replicas: {{ .Values.rag_api.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}-rag-api
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}-rag-api
+    spec:
+      containers:
+      - name: rag-api
+        image: {{ .Values.rag_api.image }}
+        command:
+        - "sh"
+        - "-c"
+        args:
+        - |
+          pip install fastapi uvicorn requests numpy &&
+          cat > /app.py << 'EOF'
+          from fastapi import FastAPI, HTTPException
+          import requests
+          import numpy as np
+          import time
+          
+          app = FastAPI()
+          
+          # Конфигурация
+          QDRANT_URL = "http://rag-system-qdrant:6333"
+          TRITON_URL = "http://rag-system-triton:8000"
+          DEEPSEEK_API_KEY = "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"
+          
+          def call_deepseek(prompt):
+              try:
+                  response = requests.post(
+                      "https://openrouter.ai/api/v1/chat/completions",
+                      headers={
+                          "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                          "Content-Type": "application/json"
+                      },
+                      json={
+                          "model": "deepseek/deepseek-chat",
+                          "messages": [{"role": "user", "content": prompt}],
+                          "max_tokens": 1000
+                      },
+                      timeout=60
+                  )
+                  if response.status_code == 200:
+                      result = response.json()
+                      return result["choices"][0]["message"]["content"]
+                  return f"API Error: {response.status_code}"
+              except Exception as e:
+                  return f"Connection Error: {str(e)}"
+          
+          @app.post("/query")
+          async def rag_query(request: dict):
+              start_time = time.time()
+              question = request.get("question", "").strip()
+              if not question:
+                  raise HTTPException(400, "Question is required")
+              
+              # Для теста возвращаем заглушку
+              return {
+                  "answer": "Triton integration in progress - using test response",
+                  "sources": [],
+                  "processing_time": round(time.time() - start_time, 2),
+                  "model": "test"
+              }
+          
+          @app.get("/health")
+          async def health():
+              return {"status": "healthy"}
+          
+          if __name__ == "__main__":
+              import uvicorn
+              uvicorn.run(app, host="0.0.0.0", port=9000)
+          EOF
+          python /app.py
+        ports:
+        - containerPort: 9000
+        env:
+        - name: QDRANT_URL
+          value: {{ .Values.rag_api.config.qdrantUrl | quote }}
+        - name: TRITON_URL
+          value: {{ .Values.rag_api.config.tritonUrl | quote }}
+        resources:
+          {{- toYaml .Values.rag_api.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}-rag-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Chart.Name }}-rag-api
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Chart.Name }}-rag-api
+  ports:
+  - port: 9000
+    targetPort: 9000
+    protocol: TCP

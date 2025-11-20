@@ -1,0 +1,63 @@
+global:
+  namespace: rag-system
+
+# Vector Database
+qdrant:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 6333
+
+# Embedder Service (Triton)
+triton:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: nvcr.io/nvidia/tritonserver
+    tag: 24.04-py3
+  service:
+    type: ClusterIP
+    httpPort: 8000
+    grpcPort: 8001
+  gpu:
+    enabled: false
+    nodeSelector:
+      key: "node-type"
+      value: "gpu"
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+
+# LLM Service
+llm:
+  enabled: true
+  # Ваши настройки LLM
+
+# RAG API
+rag_api:
+  enabled: true
+  image: your-rag-api:latest
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8000
+  # Конфигурация подключения к другим сервисам
+  config:
+    qdrantUrl: "http://rag-system-qdrant:6333"
+    tritonUrl: "http://rag-system-triton:8000"
+    embedderModel: "embedder"
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "0.5"
+    limits:
+      memory: "2Gi"
+      cpu: "1"
+
+# Legacy embedder (отключаем, т.к. используем Triton)
+embedder:
+  enabled: false

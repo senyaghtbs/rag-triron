@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-system-model-source
+  labels:
+    app: rag-system
+    component: triton
+data:
+  config.pbtxt: |
+    name: "rag_system_model"
+    platform: "python"
+    max_batch_size: 8
+    
+    input [
+      {
+        name: "input_text"
+        data_type: TYPE_STRING
+        dims: [ -1 ]
+      }
+    ]
+    
+    output [
+      {
+        name: "output_embeddings"
+        data_type: TYPE_FP32
+        dims: [ 1024 ]
+      }
+    ]
+    
+    instance_group [
+      {
+        kind: KIND_GPU
+        count: 1
+      }
+    ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-system-triton
+  labels:
+    app: rag-system
+    component: triton
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-system
+      component: triton
+  template:
+    metadata:
+      labels:
+        app: rag-system
+        component: triton
+    spec:
+      containers:
+      - name: triton-server
+        image: nvcr.io/nvidia/tritonserver:23.01-py3
+        ports:
+        - containerPort: 8000
+          name: grpc
+        - containerPort: 8001
+          name: http
+        - containerPort: 8002
+          name: metrics
+        volumeMounts:
+        - name: model-source
+          mountPath: /models/config
+          readOnly: true
+        - name: model-storage
+          mountPath: /models
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+            nvidia.com/gpu: 1
+        env:
+        - name: MODEL_REPOSITORY
+          value: "/models"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          cp /models/config/* /models/ 2>/dev/null || true
+          tritonserver --model-repository=/models --http-port=8001 --grpc-port=8000 --metrics-port=8002
+      volumes:
+      - name: model-source
+        configMap:
+          name: rag-system-model-source
+      - name: model-storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-system-triton-service
+  labels:
+    app: rag-system
+    component: triton
+spec:
+  selector:
+    app: rag-system
+    component: triton
+  ports:
+  - name: grpc
+    port: 8000
+    targetPort: 8000
+  - name: http
+    port: 8001
+    targetPort: 8001
+  - name: metrics
+    port: 8002
+    targetPort: 8002
+  type: ClusterIP

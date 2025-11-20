@@ -1,0 +1,128 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}-llm
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Chart.Name }}-llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}-llm
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}-llm
+    spec:
+      containers:
+      - name: llm
+        image: python:3.9-slim
+        command:
+          - "sh"
+          - "-c"
+        args:
+          - |
+            pip install fastapi uvicorn requests &&
+            cat > app.py << 'EOF'
+            from fastapi import FastAPI
+            import requests
+            import os
+
+            app = FastAPI()
+
+            # Ваш реальный API ключ от OpenRouter
+            OPENROUTER_API_KEY = "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"
+
+            @app.post("/generate")
+            async def generate_text(request: dict):
+                prompt = request.get("prompt", "")
+                
+                try:
+                    response = requests.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://rag-system.local",
+                            "X-Title": "RAG System"
+                        },
+                        json={
+                            "model": "deepseek/deepseek-chat",  # DeepSeek модель
+                            "messages": [
+                                {"role": "user", "content": prompt}
+                            ],
+                            "max_tokens": 1000,
+                            "temperature": 0.7
+                        },
+                        timeout=60
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return {
+                            "text": result["choices"][0]["message"]["content"],
+                            "model": "deepseek-chat",
+                            "provider": "openrouter",
+                            "usage": result.get("usage", {})
+                        }
+                    else:
+                        return {
+                            "text": f"Ошибка API: {response.status_code} - {response.text}",
+                            "model": "error",
+                            "provider": "openrouter_error"
+                        }
+                        
+                except Exception as e:
+                    return {
+                        "text": f"Ошибка подключения: {str(e)}",
+                        "model": "error",
+                        "provider": "connection_error"
+                    }
+
+            @app.get("/models")
+            async def list_models():
+                return {
+                    "current_model": "deepseek/deepseek-chat",
+                    "available_models": [
+                        "deepseek/deepseek-chat",
+                        "mistralai/mistral-7b-instruct:free",
+                        "google/gemma-7b-it:free"
+                    ]
+                }
+
+            @app.get("/health")
+            async def health():
+                return {"status": "healthy", "service": "llm-api"}
+
+            if __name__ == "__main__":
+                import uvicorn
+                uvicorn.run(app, host="0.0.0.0", port=8000)
+            EOF
+            python app.py
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "300m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}-llm
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ .Chart.Name }}-llm
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Chart.Name }}-llm
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP

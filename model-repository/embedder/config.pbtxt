@@ -1,0 +1,35 @@
+name: "embedder"
+platform: "onnxruntime_onnx"
+max_batch_size: 32
+
+input [
+  {
+    name: "input_ids"
+    data_type: TYPE_INT64
+    dims: [ -1 ]  # Динамическая последовательность
+  },
+  {
+    name: "attention_mask" 
+    data_type: TYPE_INT64
+    dims: [ -1 ]  # Динамическая последовательность
+  }
+]
+
+output [
+  {
+    name: "last_hidden_state"
+    data_type: TYPE_FP32
+    dims: [ -1, 768 ]  # [sequence_length, hidden_size]
+  }
+]
+
+dynamic_batching {
+  max_queue_delay_microseconds: 1000
+}
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_GPU  # или KIND_CPU
+  }
+]
